@@ -4,16 +4,45 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id        String   @id @default(uuid())
+  id        String   @id @default(cuid())
   email     String   @unique
-  password  String
+  password  String?
   firstName String
   lastName  String
-  role      String   @default("student")
   photo     String   @default("")
+  role      UserRole @default(STUDENT)
+  
+  // Student fields
+  studentLevel StudentLevel?
+  age          Int?
+  parentEmail  String?
+  
+  // Tutor fields
+  bio              String?
+  hourlyRate       Float?
+  teachingAreas    String[]
+  
+  // Scheduling preferences
+  timezone         String   @default("UTC")
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  
+  @@map("users")
+}
+
+enum UserRole {
+  STUDENT
+  TUTOR
+  ADMIN
+}
+
+enum StudentLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
 }
