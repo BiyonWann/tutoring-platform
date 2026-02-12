@@ -35,7 +35,7 @@ export const login = async (email: string, password: string) => {
         where: { email },
     });
 
-    if (!user) {
+    if (!user || !user.password) {
         throw new Error('Invalid email or password');
     }
 
