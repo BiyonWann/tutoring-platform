@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import logo from "../assets/logo.png";
 
 // show different links based on login state
 export default function Navbar() {
@@ -14,22 +15,35 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <Link to="/" className="navbar-brand">
-        Tutoring Platform
+        <img src={logo} alt="Tutoring Platform" className="navbar-logo" />
       </Link>
 
       <div className="navbar-links">
         {isLoggedIn ? (
           <>
-            <span className="navbar-user">{user?.name}</span>
-            <Link to="/dashboard">Dashboard</Link>
-            <button onClick={handleLogout} className="btn-logout">
+            <Link to="/dashboard" className="navbar-link">
+              <span className="navbar-link-icon">📊</span>
+              Dashboard
+            </Link>
+            <div className="navbar-user-info">
+              <div className="navbar-user-avatar">
+                {user?.name?.charAt(0).toUpperCase() || "U"}
+              </div>
+              <span className="navbar-user-name">{user?.name || "User"}</span>
+            </div>
+            <button onClick={handleLogout} className="navbar-logout-btn">
+              <span className="navbar-logout-icon">🚪</span>
               Log Out
             </button>
           </>
         ) : (
           <>
-            <Link to="/login">Log In</Link>
-            <Link to="/signup">Sign Up</Link>
+            <Link to="/login" className="navbar-link navbar-link-secondary">
+              Log In
+            </Link>
+            <Link to="/signup" className="navbar-link navbar-link-primary">
+              Sign Up
+            </Link>
           </>
         )}
       </div>

@@ -14,24 +14,48 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// Helper to check if token is valid (not empty and not "null" string)
+function isValidToken(token: string | null): boolean {
+  return !!token && token.trim() !== "" && token !== "null";
+}
+
 // Wrapping the auth state
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Load saved auth data from localStorage 
-  const [token, setToken] = useState<string | null>(
-    localStorage.getItem("token")
-  );
-  const [userId, setUserId] = useState<string | null>(
-    localStorage.getItem("userId")
-  );
+  const [token, setToken] = useState<string | null>(() => {
+    const saved = localStorage.getItem("token");
+    return isValidToken(saved) ? saved : null;
+  });
+  const [userId, setUserId] = useState<string | null>(() => {
+    const saved = localStorage.getItem("userId");
+    return saved && saved !== "null" ? saved : null;
+  });
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem("user");
     return saved ? JSON.parse(saved) : null;
   });
 
-  const isLoggedIn = !!token;
+  // Validate token on mount and clear invalid tokens
+  useEffect(() => {
+    const savedToken = localStorage.getItem("token");
+    if (!isValidToken(savedToken)) {
+      // Clear invalid token and related data
+      setToken(null);
+      setUserId(null);
+      setUser(null);
+      localStorage.removeItem("token");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("user");
+    }
+  }, []);
+
+  const isLoggedIn = isValidToken(token);
 
   // Save auth data to state and localStorage after login
   function saveAuth(token: string, userId: string, user: User) {
+    if (!isValidToken(token)) {
+      throw new Error("Invalid token provided");
+    }
     setToken(token);
     setUserId(userId);
     setUser(user);
