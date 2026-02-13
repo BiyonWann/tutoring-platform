@@ -11,12 +11,21 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return isLoggedIn ? children : <Navigate to="/login" />;
 }
 
+// Home route — redirects to dashboard if logged in, login if not
+function HomeRoute() {
+  const { isLoggedIn } = useAuth();
+  return isLoggedIn ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />;
+}
+
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Navbar />
         <Routes>
+          {/* Home route */}
+          <Route path="/" element={<HomeRoute />} />
+
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />

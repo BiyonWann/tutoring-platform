@@ -4,8 +4,12 @@ import type { UserProfile } from "../types";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 // Helper to get the saved JWT token from localStorage
-function getToken(): string | null {
-  return localStorage.getItem("token");
+function getToken(): string {
+  const token = localStorage.getItem("token");
+  if (!token) {
+    throw new Error("No authentication token found. Please log in.");
+  }
+  return token;
 }
 
 // GET /users/:userId — Fetch a single user's profile
@@ -16,12 +20,17 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
     },
   });
 
-  const data = await res.json();
-
   if (!res.ok) {
-    throw data;
+    let errorData;
+    try {
+      errorData = await res.json();
+    } catch {
+      errorData = { error: `HTTP ${res.status}: ${res.statusText}` };
+    }
+    throw errorData;
   }
 
+  const data = await res.json();
   return data;
 }
 
@@ -33,12 +42,17 @@ export async function getAllUsers(): Promise<UserProfile[]> {
     },
   });
 
-  const data = await res.json();
-
   if (!res.ok) {
-    throw data;
+    let errorData;
+    try {
+      errorData = await res.json();
+    } catch {
+      errorData = { error: `HTTP ${res.status}: ${res.statusText}` };
+    }
+    throw errorData;
   }
 
+  const data = await res.json();
   return data;
 }
 
@@ -51,11 +65,16 @@ export async function deleteUser(userId: string): Promise<{ message: string }> {
     },
   });
 
-  const data = await res.json();
-
   if (!res.ok) {
-    throw data;
+    let errorData;
+    try {
+      errorData = await res.json();
+    } catch {
+      errorData = { error: `HTTP ${res.status}: ${res.statusText}` };
+    }
+    throw errorData;
   }
 
+  const data = await res.json();
   return data;
 }

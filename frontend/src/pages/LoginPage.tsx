@@ -36,36 +36,56 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="page">
-      <form className="form" onSubmit={handleSubmit}>
-        <h2>Log In</h2>
+    <div className="auth-container">
+      <div className="auth-card">
+        <div className="auth-header">
+          <h1 className="auth-title">Welcome Back</h1>
+          <p className="auth-subtitle">Sign in to continue to your dashboard</p>
+        </div>
 
-        {error && <p className="error">{error}</p>}
+        <form className="auth-form" onSubmit={handleSubmit}>
+          {error && <div className="auth-error-message">{error}</div>}
 
-        <label>Email</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
+          <div className="auth-form-group">
+            <label className="auth-label">Email</label>
+            <input
+              type="email"
+              className="auth-input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              placeholder="john.doe@example.com"
+            />
+          </div>
 
-        <label>Password</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+          <div className="auth-form-group">
+            <label className="auth-label">Password</label>
+            <input
+              type="password"
+              className="auth-input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              placeholder="••••••••"
+            />
+          </div>
 
-        <button type="submit" disabled={loading}>
-          {loading ? "Logging in..." : "Log In"}
-        </button>
+          <button type="submit" className="auth-submit-btn" disabled={loading}>
+            {loading ? (
+              <>
+                <span className="auth-loading-spinner"></span>
+                Logging in...
+              </>
+            ) : (
+              "Log In"
+            )}
+          </button>
 
-        <p className="link">
-          Don't have an account? <Link to="/signup">Sign Up</Link>
-        </p>
-      </form>
+          <p className="auth-link-text">
+            Don't have an account? <Link to="/signup" className="auth-link">Sign Up</Link>
+          </p>
+        </form>
+      </div>
     </div>
   );
 }

@@ -8,21 +8,27 @@ export async function signup(
   email: string,
   password: string,
   firstName: string,
-  lastName: string
+  lastName: string,
+  role: "STUDENT" | "TUTOR" = "STUDENT"
 ): Promise<SignupResponse> {
   const res = await fetch(`${API_URL}/auth/signup`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, firstName, lastName }),
+    body: JSON.stringify({ email, password, firstName, lastName, role }),
   });
-
-  const data = await res.json();
 
   // If backend returns an error, throw it so the UI can display it
   if (!res.ok) {
-    throw data;
+    let errorData;
+    try {
+      errorData = await res.json();
+    } catch {
+      errorData = { error: `HTTP ${res.status}: ${res.statusText}` };
+    }
+    throw errorData;
   }
 
+  const data = await res.json();
   return data;
 }
 
@@ -37,11 +43,16 @@ export async function login(
     body: JSON.stringify({ email, password }),
   });
 
-  const data = await res.json();
-
   if (!res.ok) {
-    throw data;
+    let errorData;
+    try {
+      errorData = await res.json();
+    } catch {
+      errorData = { error: `HTTP ${res.status}: ${res.statusText}` };
+    }
+    throw errorData;
   }
 
+  const data = await res.json();
   return data;
 }
