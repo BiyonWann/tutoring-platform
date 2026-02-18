@@ -1,37 +1,66 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
+
+// ========================================
+// USER MANAGEMENT
+// ========================================
+
+// User model covering students, tutors, and admins
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
   password  String?
   firstName String
   lastName  String
-  photo     String   @default("")
   role      UserRole @default(STUDENT)
-  
-  // Student fields
-  studentLevel StudentLevel?
-  age          Int?
-  parentEmail  String?
-  
-  // Tutor fields
-  bio              String?
-  hourlyRate       Float?
-  teachingAreas    String[]
-  
+
+  // Student-specific fields
+  studentLevel StudentLevel?                  // Beginner, Intermediate, Advanced
+  age          Int?                           
+  parentEmail  String?                        // Notifications to parents
+
+  // Tutor-specific fields
+  bio             String?                     // Professional bio/description
+  hourlyRate      Float?                      // Rate in USD per hour
+  teachingAreas   String[]                    // Teaching specialties
+  stripeConnectId String?                     // For Stripe Connect payouts
+  bufferTime      Int?     @default(15)       // Minutes between sessions
+
   // Scheduling preferences
-  timezone         String   @default("UTC")
-  
+  timezone String @default("UTC")             // User's timezone
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
+  // Relations
+  studentSessions          Session[]              @relation("StudentSessions")
+  tutorSessions            Session[]              @relation("TutorSessions")
+  studentRecurringSessions RecurringSession[]     @relation("StudentRecurring")
+  tutorRecurringSessions   RecurringSession[]     @relation("TutorRecurring")
+  progress                 UserProgress[]
+  payments                 Payment[]
+  availability             Availability[]
+  codeSessions             CodeSession[]
+  calendarIntegrations     CalendarIntegration[]
+  notificationSettings     NotificationSettings?
+  notifications            Notification[]
+  sentMessages             Message[]              @relation("MessageSender")
+  receivedMessages         Message[]              @relation("MessageReceiver")
+  sessionNotes             SessionNote[]
+  studentEnrollments       CurriculumEnrollment[] @relation("StudentEnrollments")
+  createdCurricula         Curriculum[]           @relation("CurriculumCreator")
+
   @@map("users")
 }
 
@@ -45,4 +74,657 @@ enum StudentLevel {
   BEGINNER
   INTERMEDIATE
   ADVANCED
+}
+
+
+// ========================================
+// CURRICULUM MODELS
+// ========================================
+
+// Main curriculum structure
+model Curriculum {
+  id          String @id @default(cuid())
+  title       String
+  description String
+
+  // Categorization
+  subject String                             // Ex: python 
+  level   Level                              // Overall difficulty level
+  tags    String[]                         
+
+  // Course details
+  objectives     String[]                    // Learning objectives for curriculum
+  prerequisites  String[]            
+  estimatedHours Float                       // Total hours to complete
+
+  // Pricing and access
+  price    Float?                          
+  isPublic Boolean @default(true)            // Publicly visible in catalog 
+  isActive Boolean @default(true)            // Available for enrollment
+
+  // Creator and versioning
+  createdBy    String                        // User ID of curriculum creator
+  version      String  @default("1.0.0")    
+
+  // Display
+  thumbnailUrl String?                       // Cover image URL
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  creator     User                   @relation("CurriculumCreator", fields: [createdBy], references: [id])
+  modules     CurriculumModule[]
+  enrollments CurriculumEnrollment[]
+  sessions    Session[]
+  progress    UserProgress[]
+  reviews     CurriculumReview[]
+
+  @@index([subject, level])
+  @@map("curricula")
+}
+
+// Modules within curriculum
+model CurriculumModule {
+  id           String @id @default(cuid())
+  curriculumId String
+
+  title          String                       // Module name
+  description    String                       
+  order          Int                          // Display order within curriculum
+  objectives     String[]                     // Learning objectives for this module
+  estimatedHours Float                        // Hours to complete this module
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  curriculum Curriculum        @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+  lessons    CurriculumLesson[]
+
+  @@unique([curriculumId, order])
+  @@map("curriculum_modules")
+}
+
+// Individual lessons within a module
+model CurriculumLesson {
+  id       String @id @default(cuid())
+  moduleId String
+
+  title       String                          // Lesson name
+  description String?                       
+  order       Int                             // Display order within module
+
+  // Lesson configuration
+  type     LessonType                        
+  duration Int                                // Estimated minutes to complete
+
+  // Content storage
+  content   Json                              // JSON for different lesson types
+  resources Json?                            
+
+  // Requirements
+  isRequired Boolean @default(true)           
+  passScore  Int?                            
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  module         CurriculumModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  lessonProgress LessonProgress[]
+
+  @@unique([moduleId, order])
+  @@map("curriculum_lessons")
+}
+
+// Track individual student enrollment in curricula
+model CurriculumEnrollment {
+  id           String @id @default(cuid())
+  studentId    String
+  curriculumId String
+
+  // Enrollment details
+  enrolledAt  DateTime  @default(now())      
+  completedAt DateTime?                      
+  expiresAt   DateTime?                       // For time limited access
+
+  // Progress tracking
+  status             EnrollmentStatus @default(ACTIVE)
+  progressPercentage Float            @default(0)     // 0-100 completion percentage
+  lastAccessedAt     DateTime?                        
+
+  // Payment reference
+  paymentId String?                           // Reference to payment if paid course
+
+  // Relations
+  student    User       @relation("StudentEnrollments", fields: [studentId], references: [id])
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id])
+
+  @@unique([studentId, curriculumId])
+  @@map("curriculum_enrollments")
+}
+
+// Progress tracking for individual lessons
+model LessonProgress {
+  id       String @id @default(cuid())
+  userId   String
+  lessonId String
+
+  // Progress tracking
+  status       ProgressStatus @default(NOT_STARTED)
+  startedAt    DateTime?                      
+  completedAt  DateTime?                     
+  lastAccessAt DateTime       @default(now()) 
+
+  // Performance tracking
+  attempts  Int    @default(0)                // Number of attempts
+  score     Float?                            // Score achieved (for graded content)
+  timeSpent Int    @default(0)                // Total minutes spent
+
+  // User submissions
+  submission Json?                            // Flexible field for different submission types
+  feedback   String?                          // Tutor feedback on submission
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  lesson CurriculumLesson @relation(fields: [lessonId], references: [id])
+
+  @@unique([userId, lessonId])
+  @@map("lesson_progress")
+}
+
+// Reviews and ratings for curricula
+model CurriculumReview {
+  id           String @id @default(cuid())
+  userId       String
+  curriculumId String
+
+  rating       Int                            // 1-5 stars
+  title        String?                        // Review headline
+  comment      String                         // Review text
+
+  // Review metadata
+  isVerified   Boolean @default(false)        // Verified student review
+  helpfulCount Int     @default(0)            // Number of "helpful" votes
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id])
+
+  @@unique([userId, curriculumId])
+  @@map("curriculum_reviews")
+}
+
+// Curriculum-related enums
+enum Level {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum LessonType {
+  VIDEO
+  READING
+  CODING_EXERCISE
+  QUIZ
+  PROJECT
+  LIVE_SESSION
+  ASSIGNMENT
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  PAUSED
+  EXPIRED
+  CANCELLED
+}
+
+
+// ========================================
+// SESSION MANAGEMENT
+// ========================================
+
+// Tutoring sessions
+model Session {
+  id        String @id @default(cuid())
+  studentId String
+  tutorId   String
+
+  scheduledAt DateTime                        // Session start time
+  duration    Int           @default(60)      // Duration in minutes
+  status      SessionStatus @default(SCHEDULED)
+
+  // Curriculum reference
+  curriculumId String?                        // Optional curriculum being followed
+
+  // Session notes and feedback
+  tutorNotes      String?                     
+  studentFeedback String?                     
+  rating          Int?                        // 1-5 star rating
+
+  // Recurring session info
+  recurringSessionId String?                  // Parent recurring session
+  instanceNumber     Int?                     // For recurring sessions (1st, 2nd, etc.)
+
+  // Rescheduling tracking
+  originalScheduledAt DateTime?               // Original time if rescheduled
+  rescheduleReason    String?                 // Reason for rescheduling
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  student          User              @relation("StudentSessions", fields: [studentId], references: [id])
+  tutor            User              @relation("TutorSessions", fields: [tutorId], references: [id])
+  curriculum       Curriculum?       @relation(fields: [curriculumId], references: [id])
+  payment          Payment?
+  codeSession      CodeSession?
+  recurringSession RecurringSession? @relation(fields: [recurringSessionId], references: [id])
+  sessionNotes     SessionNote[]
+  notifications    Notification[]
+  messages         Message[]
+
+  @@map("sessions")
+}
+
+enum SessionStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  ENDED_EARLY
+  TECHNICAL_DIFFICULTIES
+}
+
+// Recurring session templates
+model RecurringSession {
+  id        String @id @default(cuid())
+  studentId String
+  tutorId   String
+
+  // Recurrence pattern
+  frequency RecurrenceType                    // DAILY, WEEKLY, MONTHLY
+  interval  Int            @default(1)        // Every N weeks/days
+  dayOfWeek Int?                              // 0 = Sunday, 1 = Monday, etc.
+  timeSlot  String                            // "14:30" format
+  duration  Int            @default(60)       // Minutes per session
+
+  // Active period
+  startDate DateTime                          // First session date
+  endDate   DateTime?                         // Last session date (null = ongoing)
+  isActive  Boolean        @default(true)
+
+  // Holiday/exception handling
+  skipHolidays Boolean    @default(true)      
+  exceptions   DateTime[]                     // Specific dates to skip
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  student  User      @relation("StudentRecurring", fields: [studentId], references: [id])
+  tutor    User      @relation("TutorRecurring", fields: [tutorId], references: [id])
+  sessions Session[]
+
+  @@map("recurring_sessions")
+}
+
+enum RecurrenceType {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+
+// ========================================
+// PROGRESS TRACKING
+// ========================================
+
+// Track student progress through curriculum
+model UserProgress {
+  id           String         @id @default(cuid())
+  userId       String
+  curriculumId String
+  status       ProgressStatus @default(NOT_STARTED)
+
+  // Progress tracking
+  completedAt DateTime?                      
+  timeSpent   Int       @default(0)          
+
+  // Code and notes
+  submittedCode String?                       // Final submitted code
+  notes         String?                       // Student's personal notes
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id])
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id])
+
+  @@unique([userId, curriculumId])
+  @@map("user_progress")
+}
+
+enum ProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  NEEDS_HELP
+}
+
+
+// ========================================
+// PAYMENT PROCESSING
+// ========================================
+
+// Payment tracking
+model Payment {
+  id        String  @id @default(cuid())
+  userId    String
+  sessionId String? @unique
+
+  // Stripe information
+  stripePaymentId String        @unique       // Stripe payment intent ID
+  amount          Float                       // Amount in dollars
+  currency        String        @default("usd")
+  status          PaymentStatus @default(PENDING)
+
+  // Payment metadata
+  description   String?                      
+  paymentMethod String?                      
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id])
+  session Session? @relation(fields: [sessionId], references: [id])
+
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+
+// ========================================
+// SCHEDULING & AVAILABILITY
+// ========================================
+
+// Tutor availability
+model Availability {
+  id      String @id @default(cuid())
+  tutorId String
+
+  // Time slots
+  dayOfWeek Int                               // 0 = Sunday, 1 = Monday, etc.
+  startTime String                            // "09:00" format
+  endTime   String                            // "17:00" format
+  timezone  String @default("UTC")            // Timezone for times
+
+  // Recurring availability
+  isRecurring Boolean   @default(true)        // Repeats weekly
+  validFrom   DateTime?                       // Start date of availability
+  validUntil  DateTime?                       // End date of availability
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  tutor User @relation(fields: [tutorId], references: [id])
+
+  @@map("availability")
+}
+
+
+// ========================================
+// COLLABORATION FEATURES
+// ========================================
+
+// Real-time collaborative code sessions
+model CodeSession {
+  id        String @id @default(cuid())
+  sessionId String @unique
+  editorId  String @unique                    // For real-time collaboration
+
+  // Code content
+  code     String  @default("")              // Current code content
+  language String  @default("python")        // Programming language
+
+  // Session metadata
+  isActive Boolean @default(true)            // Currently active session
+
+  // Permissions and access
+  createdBy String                           // User who created session
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  session Session @relation(fields: [sessionId], references: [id])
+  creator User    @relation(fields: [createdBy], references: [id])
+
+  @@map("code_sessions")
+}
+
+
+// ========================================
+// CALENDAR INTEGRATIONS
+// ========================================
+
+// Third-party calendar integrations
+model CalendarIntegration {
+  id       String           @id @default(cuid())
+  userId   String
+  provider CalendarProvider
+
+  // OAuth tokens
+  accessToken  String                         // OAuth access token
+  refreshToken String?                        // OAuth refresh token
+  tokenExpiry  DateTime?                      // Token expiration time
+
+  // Integration settings
+  syncEnabled Boolean @default(true)          // Auto-sync enabled
+  calendarId  String?                         // Specific calendar to sync with
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, provider])
+  @@map("calendar_integrations")
+}
+
+enum CalendarProvider {
+  GOOGLE
+  OUTLOOK
+  APPLE
+}
+
+
+// ========================================
+// NOTIFICATIONS & MESSAGING
+// ========================================
+
+// User notification preferences
+model NotificationSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Email notifications
+  emailReminders     Boolean @default(true)   // Send email reminders
+  emailReminderTime  Int     @default(60)     // Minutes before session
+  emailCancellations Boolean @default(true)   // Email about cancellations
+  emailRescheduling  Boolean @default(true)   // Email about rescheduling
+
+  // SMS notifications (optional)
+  smsReminders    Boolean @default(false)     // Send SMS reminders
+  smsReminderTime Int     @default(30)        // Minutes before session
+  phoneNumber     String?                     // Phone for SMS
+
+  // In-app notifications
+  inAppReminders Boolean @default(true)       // Show in-app reminders
+  inAppMessages  Boolean @default(true)       // Show message notifications
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notification_settings")
+}
+
+// Notification history and queue
+model Notification {
+  id        String  @id @default(cuid())
+  userId    String
+  sessionId String?
+
+  type    NotificationType                    // Type of notification
+  channel NotificationChannel                 // Delivery channel
+
+  // Content
+  title   String                             // Notification title
+  message String                             // Notification body
+
+  // Delivery tracking
+  status NotificationStatus @default(PENDING)
+  sentAt DateTime?                           // When sent
+  readAt DateTime?                           // When read
+
+  // Metadata
+  metadata Json?                             // Additional data like email addresses
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id])
+  session Session? @relation(fields: [sessionId], references: [id])
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  SESSION_REMINDER
+  SESSION_CANCELLED
+  SESSION_RESCHEDULED
+  SESSION_COMPLETED
+  PAYMENT_REMINDER
+  PAYMENT_RECEIVED
+  MESSAGE_RECEIVED
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  IN_APP
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  READ
+}
+
+// Messages between tutors and students
+model Message {
+  id         String  @id @default(cuid())
+  senderId   String
+  receiverId String
+  sessionId  String?
+
+  subject String?                             // Optional subject line
+  content String                              // Message content
+  isRead  Boolean @default(false)             // Read status
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  sender   User     @relation("MessageSender", fields: [senderId], references: [id])
+  receiver User     @relation("MessageReceiver", fields: [receiverId], references: [id])
+  session  Session? @relation(fields: [sessionId], references: [id])
+
+  @@map("messages")
+}
+
+
+// ========================================
+// SESSION NOTES & DOCUMENTATION
+// ========================================
+
+// Detailed session notes (separate from basic session feedback)
+model SessionNote {
+  id        String @id @default(cuid())
+  sessionId String
+  authorId  String
+
+  // Note content
+  title    String?                            // Optional title
+  content  String                             // Note content
+  category NoteCategory @default(GENERAL)     // Note categorization
+
+  // Visibility
+  isPrivate Boolean @default(false)           // Private to tutor only
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  session Session @relation(fields: [sessionId], references: [id])
+  author  User    @relation(fields: [authorId], references: [id])
+
+  @@map("session_notes")
+}
+
+enum NoteCategory {
+  GENERAL
+  PROGRESS
+  HOMEWORK
+  CONCERNS
+  ACHIEVEMENTS
+  TECHNICAL_ISSUES
+}
+
+
+// ========================================
+// ANALYTICS & LOGGING
+// ========================================
+
+// Analytics and logging
+model ActivityLog {
+  id     String  @id @default(cuid())
+  userId String?
+
+  // Event information
+  event   String                              // "session_completed", "payment_made", etc.
+  details Json?                               // Additional event data
+
+  // Context
+  ipAddress String?                           // Client IP address
+  userAgent String?                           // Browser user agent
+
+  createdAt DateTime @default(now())
+
+  @@map("activity_logs")
 }
