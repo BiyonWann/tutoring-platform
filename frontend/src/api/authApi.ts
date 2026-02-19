@@ -9,7 +9,7 @@ export async function signup(
   password: string,
   firstName: string,
   lastName: string,
-  role: "STUDENT" | "TUTOR" = "STUDENT"
+  role: "STUDENT" | "TUTOR" = "TUTOR"
 ): Promise<SignupResponse> {
   const res = await fetch(`${API_URL}/auth/signup`, {
     method: "POST",
